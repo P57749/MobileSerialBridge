@@ -1,5 +1,12 @@
 package com.example.mobileserialbridge
 
+import com.felhr.usbserial.UsbSerialDevice
+import com.felhr.usbserial.UsbSerialInterface
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+
+
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -12,6 +19,7 @@ import android.hardware.usb.UsbManager
 import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 
@@ -26,6 +34,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sendButton: Button
     private lateinit var receivedText: TextView
 
+    private var serialDevice: UsbSerialDevice? = null
+    private var serialConnection: UsbSerialConnection? = null
+
+
     private val ACTION_USB_PERMISSION = "com.example.mobileserialbridge.USB_PERMISSION"
 
     private val usbReceiver = object : BroadcastReceiver() {
@@ -33,35 +45,12 @@ class MainActivity : AppCompatActivity() {
             if (ACTION_USB_PERMISSION == intent?.action) {
                 val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
                 if (granted) {
-                    setupUsbConnection(usbDevice)
+                    setupUsbConnection(usbDevice!!)
                 }
             }
         }
     }
 
-//    override fun onCreate(savedInstanceState: Bundle?) {
-//        super.onCreate(savedInstanceState)
-//        setContentView(R.layout.activity_main)
-//
-//        editText = findViewById(R.id.editText)
-//        sendButton = findViewById(R.id.sendButton)
-//        receivedText = findViewById(R.id.receivedText)
-//
-//        usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
-//
-//        sendButton.setOnClickListener {
-//            val dataToSend = editText.text.toString()
-//            sendData(dataToSend)
-//        }
-//
-//        requestUsbPermission()
-//
-//        val deviceList = usbManager.deviceList
-//        if (deviceList.isNotEmpty()) {
-//            usbDevice = deviceList.values.first()
-//            setupUsbConnection()
-//        }
-//    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -113,23 +102,39 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
-
     private fun sendData(data: String) {
-        usbConnection?.apply {
-            val sendData = data.toByteArray()
-            usbEndpoint?.let {
-                val bytesWritten = bulkTransfer(it, sendData, sendData.size, 100)
-                if (bytesWritten >= 0) {
-                    val currentConversation = receivedText.text.toString()
-                    val newMessage = "You: $data"
-                    val newConversation = "$currentConversation\n$newMessage"
-                    receivedText.text = newConversation
-                } else {
-                    // Handle error
-                }
-            }
+        val newMessage = "You: $data"
+        addMessageToConversation(newMessage)
+    }
+
+
+
+    private fun connectToAvailableDevice() {
+        val deviceList = usbManager.deviceList
+        if (deviceList.isNotEmpty()) {
+            val usbDevice = deviceList.values.first()
+            serialConnection = UsbSerialConnection(usbManager, usbDevice)
+            serialDevice = serialConnection?.setupSerialConnection()
+        } else {
+            // No available USB devices
         }
     }
+
+
+    private fun addMessageToConversation(message: String) {
+        val textView = TextView(this)
+        textView.text = message
+        val layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        layoutParams.setMargins(16, 16, 16, 16)
+        textView.layoutParams = layoutParams
+        val chatContainer = findViewById<LinearLayout>(R.id.chatContainer)
+        chatContainer.addView(textView)
+    }
+
+
 
     override fun onDestroy() {
         super.onDestroy()
@@ -137,14 +142,68 @@ class MainActivity : AppCompatActivity() {
         usbConnection?.close()
     }
 
-    private fun connectToAvailableDevice() {
-        val deviceList = usbManager.deviceList
-        if (deviceList.isNotEmpty()) {
-            val usbDevice = deviceList.values.first()
-            setupUsbConnection(usbDevice)
-        } else {
-            // No available USB devices
+    private lateinit var usbSerialConnection: UsbSerialConnection
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        // Initialize USB serial connection
+        usbSerialConnection = UsbSerialConnection(usbManager, usbDevice!!)
+
+        sendButton.setOnClickListener {
+            val dataToSend = editText.text.toString()
+            usbSerialConnection.sendData(dataToSend)
+            addMessageToConversation("You: $dataToSend")
+            editText.text.clear()
         }
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        usbSerialConnection.close()
+    }
+
+
 }
+
+
+class UsbSerialConnection(private val usbManager: UsbManager, private val usbDevice: UsbDevice) {
+
+    private var serialDevice: UsbSerialDevice? = null
+
+    init {
+        setupSerialConnection()
+    }
+
+    private fun setupSerialConnection() {
+        val connection = usbManager.openDevice(usbDevice)
+        val driver = UsbSerialProber.getDefaultProber().probeDevice(usbDevice)
+        if (connection != null && driver != null) {
+            serialDevice = driver.open(connection)
+            configureSerialDevice()
+        }
+    }
+
+    private fun configureSerialDevice() {
+        serialDevice?.apply {
+            setBaudRate(115200) // Set your desired baud rate
+            setDataBits(UsbSerialInterface.DATA_BITS_8)
+            setStopBits(UsbSerialInterface.STOP_BITS_1)
+            setParity(UsbSerialInterface.PARITY_NONE)
+        }
+    }
+
+    fun sendData(data: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            val dataToSend = data.toByteArray()
+            serialDevice?.write(dataToSend)
+        }
+    }
+
+    fun close() {
+        serialDevice?.close()
+    }
+}
+
+
