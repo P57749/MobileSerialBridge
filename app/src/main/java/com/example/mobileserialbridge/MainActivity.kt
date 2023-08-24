@@ -14,8 +14,6 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 
 class MainActivity : AppCompatActivity() {
 
@@ -35,11 +33,35 @@ class MainActivity : AppCompatActivity() {
             if (ACTION_USB_PERMISSION == intent?.action) {
                 val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
                 if (granted) {
-                    setupUsbConnection()
+                    setupUsbConnection(usbDevice)
                 }
             }
         }
     }
+
+//    override fun onCreate(savedInstanceState: Bundle?) {
+//        super.onCreate(savedInstanceState)
+//        setContentView(R.layout.activity_main)
+//
+//        editText = findViewById(R.id.editText)
+//        sendButton = findViewById(R.id.sendButton)
+//        receivedText = findViewById(R.id.receivedText)
+//
+//        usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
+//
+//        sendButton.setOnClickListener {
+//            val dataToSend = editText.text.toString()
+//            sendData(dataToSend)
+//        }
+//
+//        requestUsbPermission()
+//
+//        val deviceList = usbManager.deviceList
+//        if (deviceList.isNotEmpty()) {
+//            usbDevice = deviceList.values.first()
+//            setupUsbConnection()
+//        }
+//    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,21 +79,17 @@ class MainActivity : AppCompatActivity() {
         }
 
         requestUsbPermission()
-
-        val deviceList = usbManager.deviceList
-        if (deviceList.isNotEmpty()) {
-            usbDevice = deviceList.values.first()
-            setupUsbConnection()
-        }
+        connectToAvailableDevice()
     }
+
 
     private fun UsbDevice.getEndpoint(i: Int): UsbEndpoint? {
     // Ipmplementar esta fucnion para recibir los endpoint deseados basados en el indice 1
     return getInterface(0)?.getEndpoint(i)
 }
 
-    private fun setupUsbConnection() {
-        usbDevice?.let {
+    private fun setupUsbConnection(usbDevice: UsbDevice) {
+        this.usbDevice?.let {
             usbConnection = usbManager.openDevice(it)
             usbEndpoint = it.getEndpoint(0) // Adjust this based on your configuration
         }
@@ -118,4 +136,15 @@ class MainActivity : AppCompatActivity() {
         unregisterReceiver(usbReceiver)
         usbConnection?.close()
     }
+
+    private fun connectToAvailableDevice() {
+        val deviceList = usbManager.deviceList
+        if (deviceList.isNotEmpty()) {
+            val usbDevice = deviceList.values.first()
+            setupUsbConnection(usbDevice)
+        } else {
+            // No available USB devices
+        }
+    }
+
 }
